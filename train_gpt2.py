@@ -1,16 +1,50 @@
 from dataclasses import dataclass
+import math
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
 @dataclass
 class GPTConfig:
-    block_size: int = 256
-    vocab_size: int = 65
-    n_layer: int = 6
-    n_head: int = 8
-    n_embd: int = 384
+    block_size: int = 1024 # max sequence length
+    vocab_size: int = 50257 # 256 bytes tokens + 1 <|endoftext|> token + 50,000 BPE tokens
+    n_layer: int = 12 # number of transformer layers 
+    n_head: int = 12 # number of heads in the multiheadattention models
+    n_embd: int = 784 # embedding dimension
 
+class CausalSelfAttention(nn.Module):
+    def __init__(self, config) -> None:
+        super().__init__(config)
+        assert config.n_embd % config.n_head == 0
+        #key, qury, value projections for all heads in a batch
+        self.c_attn = nn.Linear(config.n_embd, config.n_embd*3)
+        # output projection
+        self.c_proj = nn.Linear(config.n_embd, config.n_embd)
+        
+        self.n_head = config.n_head
+        self.n_embd = config.n_embd
+        # mask to prevent attention to future tokens
+        self.register_buffer("bias", torch.tril(torch.ones(config.block_size, config.block_size))
+                             .view(1, 1, config.block_size, config.block_size)) # becomes available as self.bias
+    def forward(self, x):
+        B, T, C = x.size()
+        # calculate query, key, value for all heads in batch
+        qkv = self.c_attn(x) # (B,T, self.n_embd) x (self.n_embd,self.n_embd*3) = (B,T,self.n_embd*3)
+        q, k, v  = qkv.split(self.n_embd, dim=2) # (B,T,self.n_embd) x 3; make each split size self.n_embd by splitting dim 2
+        q = q.view(B, T, self.n_head, C//self.n_head).transpose(1,2) # (B, nh, T, hs)
+        k = k.view(B, T, self.n_head, C//self.n_head).transpose(1,2)
+        v = v.view(B, T, self.n_head, C//self.n_head).transpose(1,2)
+        # attention materializes a large (T,T) matrix fo each query and key
+        att = (q @ k.transpose(-2,-1))*(1.0/math.sqrt(k.size(-1))) # (B, nh, T, hs) x (B, nh, hs, T) = (B, nh, T, T)
+        att = att.masked_fill(self.bias[:,:,:T,:T] == 0, float('-inf'))
+        att = F.softmax(att, dim=-1)
+        y = att @ v # (B, nh, T, T) x (B, nh, T, hs) = (B, nh, T, hs)
+        # Change (B, nh, T, hs) to (B, T, nh, hs) with transpose, reassemle in memory, (B,T,C) makes nh*hs = n_embd (C)
+        y = y.transpose(1,2).contiguous().view(B, T, C) 
+        # output projection: additional learnable transformation
+        y = self.c_proj(y) # (B, T, C)@(C, C) = (B, T, C)
+        return y
+    
 class MLP(nn.Module):
     def __init__(self,config):
         super().__init__()
