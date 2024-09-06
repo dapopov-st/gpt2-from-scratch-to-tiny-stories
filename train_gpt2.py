@@ -96,10 +96,10 @@ class GPT(nn.Module):
         B, T = idx.size()
         assert T <= self.config.block_size, "Cannot forward, model block size is exhausted."
         # forward the token and position embeddings
-        pos = torch.arange(0, T , dtype=torch.long, device=idx.device) # shape T
-        tok_emb = self.transformer.wte(idx) # shape (B, T, C)
-        pos_emb = self.transformer.wpe(pos) # shape (T, C)
-        x = tok_emb + pos_emb
+        pos = torch.arange(0, T , dtype=torch.long, device=idx.device) # shape (T,)
+        tok_emb = self.transformer.wte(idx) # (B,T)-> (B, T, C)
+        pos_emb = self.transformer.wpe(pos) # (T,)->     (T, C) 
+        x = tok_emb + pos_emb               # (B, T, C) + (T, C) -> (B, T, C) via broadcasting
         # forward the blocks of the transformer
         for block in self.transformer.h:
             x = block(x)
@@ -158,8 +158,57 @@ class GPT(nn.Module):
         return model
 
 # ----------------- Test the model -----------------
-model = GPT.from_pretrained('gpt2')
-print("didn't crash!")
+# autodetect device
+device = 'cpu'
+if torch.cuda.is_available():
+    device = 'cuda'
+    print("using GPU")
+elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+    device = 'mps'
+    print("using MPS")
+
+
+
+
+num_return_sequences = 5
+max_length = 30
+#model = GPT.from_pretrained('gpt2')
+model = GPT(GPTConfig())
+model.eval()
+model.to('cuda')
+
+# prefix tokens
+import tiktoken
+enc = tiktoken.get_encoding('gpt2')
+tokens = enc.encode("Hello I'm a language model, ")
+x = torch.tensor(tokens, dtype=torch.long).unsqueeze(0).repeat(num_return_sequences,1).to('cuda') # (5,8) since sent. tokenized to 8 tokens
+
+# generate: with each loop iteration, generate one more token
+torch.manual_seed(42)
+torch.cuda.manual_seed(42)
+while x.size(1) < max_length:
+    with torch.no_grad():
+        logits = model(x) # (B,T,vocab_size)
+        logits = logits[:, -1, :]  # take the logits at the last position
+        probs = F.softmax(logits, dim=-1) # get the probabilities
+        topk_probs, topk_indices = torch.topk(probs, 50, dim=-1) # get the top-50 tokens
+        ix = torch.multinomial(topk_probs, num_samples=1) # sample from the top 50
+        xcol = torch.gather(topk_indices, -1, ix) # select the indices of the sampled tokens
+        x = torch.cat((x, xcol), dim=1) # append the sampled token to the sequence
+
+for i in range(num_return_sequences):
+    tokens = x[i,:max_length].tolist()
+    decoded = enc.decode(tokens)
+    print('>',decoded)
+
+
+
+
+
+
+
+
+#print("didn't crash!")
 
 
 
