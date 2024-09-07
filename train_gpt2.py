@@ -91,7 +91,7 @@ class GPT(nn.Module):
         # TODO: init weights
         #self.apply(self._init_weights)
 
-    def forward(self, idx):
+    def forward(self, idx, targets = None):
         # input indices are always of shape (B, T) where B is batch size and T is block size
         B, T = idx.size()
         assert T <= self.config.block_size, "Cannot forward, model block size is exhausted."
@@ -105,8 +105,13 @@ class GPT(nn.Module):
             x = block(x)
         # forward the final layer norm and the classifier head
         x = self.transformer.ln_f(x)
+        loss = None
         logits = self.lm_head(x) # shape (B, T, vocab_size)
-        return logits
+        if targets is not None: 
+            # F.cross_entropy expects (B, T, vocab_size)-> (B*T, vocab_size) shapes for logits
+            # and (B*T,) shape for targets. 
+            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
+        return logits, loss
     
     @classmethod
     def from_pretrained(cls, model_type):
@@ -170,18 +175,40 @@ elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
 
 
 
-num_return_sequences = 5
-max_length = 30
-#model = GPT.from_pretrained('gpt2')
-model = GPT(GPTConfig())
-model.eval()
-model.to('cuda')
-
-# prefix tokens
+# build a simple data loader
 import tiktoken
 enc = tiktoken.get_encoding('gpt2')
-tokens = enc.encode("Hello I'm a language model, ")
-x = torch.tensor(tokens, dtype=torch.long).unsqueeze(0).repeat(num_return_sequences,1).to('cuda') # (5,8) since sent. tokenized to 8 tokens
+#tokens = enc.encode("Hello I'm a language model, ")
+#x = torch.tensor(tokens, dtype=torch.long).unsqueeze(0).repeat(num_return_sequences,1).to('cuda') # (5,8) since sent. tokenized to 8 tokens
+with open("input.txt", "r") as f:
+    text = f.read()
+data = text[:1000]
+tokens = enc.encode(text)
+B, T = 4, 32
+buf = torch.tensor(tokens[:B*T+1])
+x = buf[:-1].view(B,T).to(device)
+y = buf[1:].view(B,T).to(device)
+
+num_return_sequences = 5
+max_length = 30
+# create the model
+#model = GPT.from_pretrained('gpt2')
+model = GPT(GPTConfig())
+model.to(device)
+# create an optimizer object
+optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
+for i in range(500):
+    optimizer.zero_grad()
+    logits, loss = model(x,y)
+    loss.backward()
+    optimizer.step()
+    print(f'iteration {i}, loss = {loss.item()}')
+    
+
+
+
+import sys; sys.exit(0)
+model.eval()
 
 # generate: with each loop iteration, generate one more token
 torch.manual_seed(42)
