@@ -161,6 +161,35 @@ class GPT(nn.Module):
                     sd[k].copy_(sd_hf[k])
 
         return model
+# ----------------- Data loader lite -----------------
+import tiktoken
+class DataLoaderLite:
+    def __init__(self, B, T):
+        self.B = B
+        self.T = T
+        # load the data from disk into memory
+        with open("input.txt", "r") as f:
+            text = f.read()
+        enc = tiktoken.get_encoding('gpt2')
+        self.tokens = torch.tensor(enc.encode(text))
+        print(f"total tokens: {len(self.tokens)}")
+        print(f"1 epoch = {len(self.tokens)//(B*T)} batches")
+    
+        self.current_position = 0
+    
+    def next_batch(self):
+        B, T = self.B, self.T
+        buf = self.tokens[self.current_position:self.current_position+B*T+1]#.to(device)
+        x = (buf[:-1]).view(B,T)
+        y = (buf[1:]).view(B,T)
+        self.current_position += B*T
+        # if run out of tokens, loop around to zero
+        if self.current_position + B*T >= len(self.tokens):
+            self.current_position = 0
+        return x, y
+
+
+
 
 # ----------------- Test the model -----------------
 # autodetect device
@@ -175,29 +204,32 @@ elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
 
 
 
-# build a simple data loader
-import tiktoken
-enc = tiktoken.get_encoding('gpt2')
-#tokens = enc.encode("Hello I'm a language model, ")
-#x = torch.tensor(tokens, dtype=torch.long).unsqueeze(0).repeat(num_return_sequences,1).to('cuda') # (5,8) since sent. tokenized to 8 tokens
-with open("input.txt", "r") as f:
-    text = f.read()
-data = text[:1000]
-tokens = enc.encode(text)
-B, T = 4, 32
-buf = torch.tensor(tokens[:B*T+1])
-x = buf[:-1].view(B,T).to(device)
-y = buf[1:].view(B,T).to(device)
-
-num_return_sequences = 5
-max_length = 30
+# build a simple data loader: replaced with actual data loader
+# import tiktoken
+# enc = tiktoken.get_encoding('gpt2')
+# #tokens = enc.encode("Hello I'm a language model, ")
+# #x = torch.tensor(tokens, dtype=torch.long).unsqueeze(0).repeat(num_return_sequences,1).to('cuda') # (5,8) since sent. tokenized to 8 tokens
+# with open("input.txt", "r") as f:
+#     text = f.read()
+# data = text[:1000]
+# tokens = enc.encode(text)
+# B, T = 4, 32
+# buf = torch.tensor(tokens[:B*T+1])
+# x = buf[:-1].view(B,T).to(device)
+# y = buf[1:].view(B,T).to(device)
+#num_return_sequences = 5
+#max_length = 30
 # create the model
 #model = GPT.from_pretrained('gpt2')
+
+train_loader = DataLoaderLite(B=4,T=32)
 model = GPT(GPTConfig())
 model.to(device)
 # create an optimizer object
 optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
 for i in range(500):
+    x,y = train_loader.next_batch()
+    x,y = x.to(device), y.to(device)
     optimizer.zero_grad()
     logits, loss = model(x,y)
     loss.backward()
