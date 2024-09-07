@@ -20,7 +20,7 @@ class CausalSelfAttention(nn.Module):
         self.c_attn = nn.Linear(config.n_embd, config.n_embd*3)
         # output projection
         self.c_proj = nn.Linear(config.n_embd, config.n_embd)
-        
+        self.c_proj.NANOGPT_SCALE_INIT = 1
         self.n_head = config.n_head
         self.n_embd = config.n_embd
         # mask to prevent attention to future tokens
@@ -51,6 +51,8 @@ class MLP(nn.Module):
         self.c_fc = nn.Linear(config.n_embd, config.n_embd*4)
         self.gelu = nn.GELU(approximate='tanh')
         self.c_proj = nn.Linear(config.n_embd*4, config.n_embd)
+        self.c_proj.NANOGPT_SCALE_INIT = 1
+
     def forward(self,x):
         x = self.c_fc(x)
         x = self.gelu(x)
@@ -89,7 +91,21 @@ class GPT(nn.Module):
         self.transformer.wte.weight = self.lm_head.weight
 
         # TODO: init weights
-        #self.apply(self._init_weights)
+        self.apply(self._init_weights)
+
+    def _init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            std = 0.02
+            if hasattr(module, "NANOGPT_SCALE_INIT"):
+                # number of residual layers is double self.config.n_layers
+                # one for attention, one for mlp
+                std *= (2*self.config.n_layer)**-0.5
+            torch.nn.init.normal_(module.weight, mean=0.0, std=std) 
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            torch.nn.init.normal_(module.weight, mean=0.0, std = 0.02)
+    
 
     def forward(self, idx, targets = None):
         # input indices are always of shape (B, T) where B is batch size and T is block size
@@ -201,8 +217,11 @@ elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
     device = 'mps'
     print("using MPS")
 
+# add code for reproducibility
+torch.manual_seed(1337)
 
-
+if torch.cuda.is_available():
+    torch.cuda.manual_seed(1337)
 
 # build a simple data loader: replaced with actual data loader
 # import tiktoken
