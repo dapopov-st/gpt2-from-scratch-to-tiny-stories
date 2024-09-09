@@ -201,6 +201,7 @@ class DataLoaderLite:
         self.current_position += B*T
         # if run out of tokens, loop around to zero
         if self.current_position + B*T >= len(self.tokens):
+            #print('reload data from the start')
             self.current_position = 0
         return x, y
 
@@ -208,6 +209,7 @@ class DataLoaderLite:
 
 
 # ----------------- Test the model -----------------
+import time
 # autodetect device
 device = 'cpu'
 if torch.cuda.is_available():
@@ -241,52 +243,62 @@ if torch.cuda.is_available():
 # create the model
 #model = GPT.from_pretrained('gpt2')
 
-train_loader = DataLoaderLite(B=4,T=32)
+train_loader = DataLoaderLite(B=10,T=1024)
+
+torch.set_float32_matmul_precision('high')
+
 model = GPT(GPTConfig())
 model.to(device)
 # create an optimizer object
 optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
-for i in range(500):
+for i in range(50):
+    t0 = time.time()
     x,y = train_loader.next_batch()
     x,y = x.to(device), y.to(device)
     optimizer.zero_grad()
-    logits, loss = model(x,y)
+    with torch.autocast(device_type=device, dtype=torch.bfloat16):
+        logits, loss = model(x,y)
+        #import code; code.interact(local=locals())
     loss.backward()
     optimizer.step()
-    print(f'iteration {i}, loss = {loss.item()}')
+    torch.cuda.synchronize() # wait for GPU to finish all the scheduled work
+    t1= time.time()
+    dt = (t1-t0)*1000 # time diff in seconds
+    tokens_per_sec = (train_loader.B*train_loader.T)/(t1-t0)
+    print(f'iteration {i}, loss = {loss.item()}, dt: {dt: .2f}ms, toks/sec: {tokens_per_sec:.2f}')
     
 
 
 
-import sys; sys.exit(0)
-model.eval()
+# import sys; sys.exit(0)
+# model.eval()
 
-# generate: with each loop iteration, generate one more token
-torch.manual_seed(42)
-torch.cuda.manual_seed(42)
-while x.size(1) < max_length:
-    with torch.no_grad():
-        logits = model(x) # (B,T,vocab_size)
-        logits = logits[:, -1, :]  # take the logits at the last position
-        probs = F.softmax(logits, dim=-1) # get the probabilities
-        topk_probs, topk_indices = torch.topk(probs, 50, dim=-1) # get the top-50 tokens
-        ix = torch.multinomial(topk_probs, num_samples=1) # sample from the top 50
-        xcol = torch.gather(topk_indices, -1, ix) # select the indices of the sampled tokens
-        x = torch.cat((x, xcol), dim=1) # append the sampled token to the sequence
+# # generate: with each loop iteration, generate one more token
+# torch.manual_seed(42)
+# torch.cuda.manual_seed(42)
+# while x.size(1) < max_length:
+#     with torch.no_grad():
+#         logits = model(x) # (B,T,vocab_size)
+#         logits = logits[:, -1, :]  # take the logits at the last position
+#         probs = F.softmax(logits, dim=-1) # get the probabilities
+#         topk_probs, topk_indices = torch.topk(probs, 50, dim=-1) # get the top-50 tokens
+#         ix = torch.multinomial(topk_probs, num_samples=1) # sample from the top 50
+#         xcol = torch.gather(topk_indices, -1, ix) # select the indices of the sampled tokens
+#         x = torch.cat((x, xcol), dim=1) # append the sampled token to the sequence
 
-for i in range(num_return_sequences):
-    tokens = x[i,:max_length].tolist()
-    decoded = enc.decode(tokens)
-    print('>',decoded)
-
-
+# for i in range(num_return_sequences):
+#     tokens = x[i,:max_length].tolist()
+#     decoded = enc.decode(tokens)
+#     print('>',decoded)
 
 
 
 
 
 
-#print("didn't crash!")
+
+
+# #print("didn't crash!")
 
 
 
