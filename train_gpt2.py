@@ -249,7 +249,9 @@ torch.set_float32_matmul_precision('high')
 
 model = GPT(GPTConfig())
 model.to(device)
-# create an optimizer object
+# torch.compile only needs a single line
+model = torch.compile(model)
+
 optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
 for i in range(50):
     t0 = time.time()
