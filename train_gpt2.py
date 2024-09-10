@@ -34,11 +34,16 @@ class CausalSelfAttention(nn.Module):
         q = q.view(B, T, self.n_head, C//self.n_head).transpose(1,2) # (B, nh, T, hs)
         k = k.view(B, T, self.n_head, C//self.n_head).transpose(1,2)
         v = v.view(B, T, self.n_head, C//self.n_head).transpose(1,2)
-        # attention materializes a large (T,T) matrix fo each query and key
-        att = (q @ k.transpose(-2,-1))*(1.0/math.sqrt(k.size(-1))) # (B, nh, T, hs) x (B, nh, hs, T) = (B, nh, T, T)
-        att = att.masked_fill(self.bias[:,:,:T,:T] == 0, float('-inf'))
-        att = F.softmax(att, dim=-1)
-        y = att @ v # (B, nh, T, T) x (B, nh, T, hs) = (B, nh, T, hs)
+
+        # # attention materializes a large (T,T) matrix fo each query and key
+        # att = (q @ k.transpose(-2,-1))*(1.0/math.sqrt(k.size(-1))) # (B, nh, T, hs) x (B, nh, hs, T) = (B, nh, T, T)
+        # att = att.masked_fill(self.bias[:,:,:T,:T] == 0, float('-inf'))
+        # att = F.softmax(att, dim=-1)
+        # y = att @ v # (B, nh, T, T) x (B, nh, T, hs) = (B, nh, T, hs)
+
+        # replace the 4 lines of code above with FlashAttention
+        y = F.scaled_dot_product_attention(q,k,v, is_causal=True)
+
         # Change (B, nh, T, hs) to (B, T, nh, hs) with transpose, reassemle in memory, (B,T,C) makes nh*hs = n_embd (C)
         y = y.transpose(1,2).contiguous().view(B, T, C) 
         # output projection: additional learnable transformation
