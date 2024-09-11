@@ -230,29 +230,12 @@ torch.manual_seed(1337)
 if torch.cuda.is_available():
     torch.cuda.manual_seed(1337)
 
-# build a simple data loader: replaced with actual data loader
-# import tiktoken
-# enc = tiktoken.get_encoding('gpt2')
-# #tokens = enc.encode("Hello I'm a language model, ")
-# #x = torch.tensor(tokens, dtype=torch.long).unsqueeze(0).repeat(num_return_sequences,1).to('cuda') # (5,8) since sent. tokenized to 8 tokens
-# with open("input.txt", "r") as f:
-#     text = f.read()
-# data = text[:1000]
-# tokens = enc.encode(text)
-# B, T = 4, 32
-# buf = torch.tensor(tokens[:B*T+1])
-# x = buf[:-1].view(B,T).to(device)
-# y = buf[1:].view(B,T).to(device)
-#num_return_sequences = 5
-#max_length = 30
-# create the model
-#model = GPT.from_pretrained('gpt2')
-
 train_loader = DataLoaderLite(B=10,T=1024)
 
 torch.set_float32_matmul_precision('high')
 
-model = GPT(GPTConfig())
+model = GPT(GPTConfig(vocab_size=50304))
+#model = GPT(GPTConfig())
 model.to(device)
 # torch.compile only needs a single line
 model = torch.compile(model)
@@ -307,7 +290,23 @@ for i in range(50):
 
 # #print("didn't crash!")
 
-
+# build a simple data loader: replaced with actual data loader
+# import tiktoken
+# enc = tiktoken.get_encoding('gpt2')
+# #tokens = enc.encode("Hello I'm a language model, ")
+# #x = torch.tensor(tokens, dtype=torch.long).unsqueeze(0).repeat(num_return_sequences,1).to('cuda') # (5,8) since sent. tokenized to 8 tokens
+# with open("input.txt", "r") as f:
+#     text = f.read()
+# data = text[:1000]
+# tokens = enc.encode(text)
+# B, T = 4, 32
+# buf = torch.tensor(tokens[:B*T+1])
+# x = buf[:-1].view(B,T).to(device)
+# y = buf[1:].view(B,T).to(device)
+#num_return_sequences = 5
+#max_length = 30
+# create the model
+#model = GPT.from_pretrained('gpt2')
 
 
 
