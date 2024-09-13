@@ -254,6 +254,15 @@ torch.manual_seed(1337)
 
 if torch.cuda.is_available():
     torch.cuda.manual_seed(1337)
+# ----------------- Batch size -----------------
+total_batch_size = 524288 # 2**19 ~ 0.5M
+B = 8 # micro batch size on a 3090
+T = 1024
+assert total_batch_size % (B*T) == 0, 'make sure total_batch_size is divisible by B*T'
+grad_accum_steps = total_batch_size//(B*T)
+print(f"total desired batch size: {total_batch_size}")
+print(f"=> calculated gradient accumulation: {grad_accum_steps}")
+
 
 train_loader = DataLoaderLite(B=10,T=1024)
 
@@ -287,13 +296,16 @@ def get_lr(it):
 optimizer = model.configure_optimizers(weight_decay = 0.1, learning_rate = 6e-4, device_type = device)
 for step in range(50):
     t0 = time.time()
-    x,y = train_loader.next_batch()
-    x,y = x.to(device), y.to(device)
     optimizer.zero_grad()
-    with torch.autocast(device_type=device, dtype=torch.bfloat16):
-        logits, loss = model(x,y)
-        #import code; code.interact(local=locals())
-    loss.backward()
+    loss_accum = 0.0
+    for micro_step in range(grad_accum_steps):
+        x,y = train_loader.next_batch()
+        x,y = x.to(device), y.to(device)
+        with torch.autocast(device_type=device, dtype=torch.bfloat16):
+            logits, loss = model(x,y)
+        loss = loss/grad_accum_steps
+        loss_accum += loss.detach() # don't need to backpropagate through accumulation process
+        loss.backward() # deposits gradients by default
     norm = torch.nn.utils.clip_grad_norm_(model.parameters(),1.0)
     # determine and set the learning rate for this iteration
     lr = get_lr(step)
@@ -303,8 +315,8 @@ for step in range(50):
     torch.cuda.synchronize() # wait for GPU to finish all the scheduled work
     t1= time.time()
     dt = (t1-t0)*1000 # time diff in seconds
-    tokens_per_sec = (train_loader.B*train_loader.T)/(t1-t0)
-    print(f'iteration {step}, loss = {loss.item()}, norm: {norm:.4f}, lr: {lr:.4e}, dt: {dt: .2f}ms, toks/sec: {tokens_per_sec:.2f}')
+    tokens_per_sec = (train_loader.B*train_loader.T*grad_accum_steps)/(t1-t0)
+    print(f'iteration {step}, loss = {loss_accum.item():.6f}, norm: {norm:.4f}, lr: {lr:.4e}, dt: {dt: .2f}ms, toks/sec: {tokens_per_sec:.2f}')
 
 
 
