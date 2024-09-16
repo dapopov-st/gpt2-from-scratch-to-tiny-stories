@@ -318,8 +318,8 @@ device_type = "cuda" if device.startswith("cuda") else "cpu"
 torch.manual_seed(1337)
 if torch.cuda.is_available():
     torch.cuda.manual_seed(1337)
-
-enc = tiktoken.get_encoding("gpt2")
+from transformers import AutoTokenizer
+enc = AutoTokenizer.from_pretrained("tokenizer/tiny_stories_tokenizer") #tiktoken.get_encoding("gpt2")
 
 total_batch_size = 524288 # 2**19, ~0.5M, in number of tokens
 B = 32 # micro batch size
@@ -348,7 +348,7 @@ raw_model = model.module if ddp else model # always contains the "raw" unwrapped
 
 max_lr = 6e-4
 min_lr = max_lr * 0.1
-warmup_steps = 715
+warmup_steps = 500 #715
 max_steps = 1000#19073 # 19,073 steps is ~1 epoch, if data is 10B tokens and batch size 0.5M tokens
 def get_lr(it):
     # 1) linear warmup for warmup_iters steps
@@ -373,6 +373,8 @@ log_file = os.path.join(log_dir, f"log.txt")
 with open(log_file, "w") as f: # open for writing to clear the file
     pass
 
+
+##### Checking if last step throwing cublas error due to eval
 for step in range(max_steps):
     t0 = time.time()
     last_step = (step == max_steps - 1)
