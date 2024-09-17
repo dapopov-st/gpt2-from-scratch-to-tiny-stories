@@ -70,11 +70,11 @@ class Block(nn.Module):
 
 @dataclass
 class GPTConfig:
-    block_size: int = 1024 # max sequence length
+    block_size: int = 512 #1024 # max sequence length
     vocab_size: int = 6400 # number of tokens: 50,000 BPE merges + 256 bytes tokens + 1 <|endoftext|> token
     n_layer: int = 12 # number of layers
     n_head: int = 12 # number of heads
-    n_embd: int = 768 # embedding dimension
+    n_embd: int = 768 #738 #768 # embedding/hidden dimension
 
 class GPT(nn.Module):
 
@@ -142,7 +142,7 @@ class GPT(nn.Module):
             'gpt2-xl':      dict(n_layer=48, n_head=25, n_embd=1600), # 1558M params
         }[model_type]
         config_args['vocab_size'] = 6400 # always 50257 for GPT model checkpoints
-        config_args['block_size'] = 1024 # always 1024 for GPT model checkpoints
+        config_args['block_size'] = 512 #1024 # always 1024 for GPT model checkpoints
         # create a from-scratch initialized minGPT model
         config = GPTConfig(**config_args)
         model = GPT(config)
@@ -323,8 +323,8 @@ if __name__=='__main__':
     enc = AutoTokenizer.from_pretrained("tokenizer/tiny_stories_tokenizer") #tiktoken.get_encoding("gpt2")
 
     total_batch_size = 524288 # 2**19, ~0.5M, in number of tokens
-    B = 32 # micro batch size
-    T = 1024 # sequence length
+    B = 64 #32 # micro batch size
+    T = 512 #1024 # sequence length
     assert total_batch_size % (B * T * ddp_world_size) == 0, "make sure total_batch_size is divisible by B * T * ddp_world_size"
     grad_accum_steps = total_batch_size // (B * T * ddp_world_size)
     if master_process:
@@ -349,8 +349,8 @@ if __name__=='__main__':
 
     max_lr = 6e-4
     min_lr = max_lr * 0.1
-    warmup_steps = 500 #715
-    max_steps = 1000#19073 # 19,073 steps is ~1 epoch, if data is 10B tokens and batch size 0.5M tokens
+    warmup_steps = 650 #500 #715
+    max_steps = 6500 # # 1000 steps is ~1 epoch, if data is .5B tokens and batch size 0.5M tokens; train for 2 epochs
     def get_lr(it):
         # 1) linear warmup for warmup_iters steps
         if it < warmup_steps:
@@ -400,7 +400,7 @@ if __name__=='__main__':
                 print(f"validation loss: {val_loss_accum.item():.4f}")
                 with open(log_file, "a") as f:
                     f.write(f"{step} val {val_loss_accum.item():.4f}\n")
-                if step > 0 and (step % 5000 == 0 or last_step):
+                if step > 0 and (step % 1000 == 0 or last_step):
                     # optionally write model checkpoints
                     checkpoint_path = os.path.join(log_dir, f"model_{step:05d}.pt")
                     checkpoint = {
