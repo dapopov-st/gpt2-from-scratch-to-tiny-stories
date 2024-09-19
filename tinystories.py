@@ -35,13 +35,14 @@ enc = AutoTokenizer.from_pretrained("tokenizer/tiny_stories_tokenizer")
 
 # init the tokenizer
 eot = enc.encode(enc.eos_token)[0]# end of text token
-
+MAX_LEN = 512
+print(f'Using max len of {MAX_LEN}')
 def tokenize(doc):
     # tokenizes a single document and returns a numpy array of uint16 tokens
     tokens = [eot] # the special <|endoftext|> token delimits all documents
     tokens.extend(enc.encode(doc['text']))
     #print(f"tokens: {tokens}")
-    if len(tokens)>1024: return None
+    if len(tokens)>MAX_LEN: return None
     tokens_np = np.array(tokens)
     assert (0 <= tokens_np).all() and (tokens_np < 2**16).all(), "token dictionary too large for uint16"
     tokens_np_uint16 = tokens_np.astype(np.uint16)
