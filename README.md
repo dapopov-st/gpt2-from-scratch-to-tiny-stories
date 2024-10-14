@@ -3,6 +3,6 @@ This repo contains the training code and commits for building a GPT-2 transforme
 transformer_orig.png
 
 <div align="center">
-  <img src="assets/transformer_orig.png" alt="Transformer Diagram" width="500" />
+  <img src="assets/transformer_orig.png" alt="Transformer Diagram" width="400" />
   <p><em>Transformer Diagram, Source: Attention Is All You Need by Vaswani et al.</em></p>
 </div>
